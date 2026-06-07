@@ -67,3 +67,5 @@ serial_test = { version = "3", default-features = false, features = ["async"] }
 [[test]]
 name = "e2e"
 path = "tests/e2e/main.rs"
+
+[workspace]

@@ -52,7 +52,7 @@ pub(crate) fn build_prompt(
             Err(e) => {
                 log::debug!("apply_chat_template_oaicompat failed: {e}, falling back");
                 #[cfg(feature = "mtmd")]
-                if !request.images.is_empty() {
+                if !request.media.is_empty() {
                     return Err(format!(
                         "Chat template failed for multimodal request: {e}. \
                          The model's chat template may not support the current configuration."

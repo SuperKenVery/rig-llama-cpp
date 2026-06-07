@@ -7,7 +7,7 @@ use serde_json::{Value, json};
 #[cfg(feature = "mtmd")]
 use crate::slot::fnv1a_64;
 #[cfg(feature = "mtmd")]
-use crate::types::PreparedImage;
+use crate::types::PreparedMedia;
 use crate::types::PreparedRequest;
 
 /// Normalize a tool result's content list. rig-core 0.35.0's streaming agent
@@ -118,18 +118,25 @@ pub(crate) fn prepare_request(request: &CompletionRequest) -> Result<PreparedReq
         .map_err(|e| format!("Schema serialization failed: {e}"))?;
 
     #[cfg(feature = "mtmd")]
-    let images = {
-        let mut imgs = Vec::new();
+    let media = {
+        let mut media = Vec::new();
         for msg in request.chat_history.iter() {
             if let Message::User { content } = msg {
                 for item in content.iter() {
                     match item {
-                        UserContent::Image(image) => match extract_image_bytes(image) {
+                        UserContent::Image(image) => match extract_media_bytes(&image.data) {
                             Ok(bytes) => {
                                 let hash = fnv1a_64(&bytes);
-                                imgs.push(PreparedImage { bytes, hash });
+                                media.push(PreparedMedia { bytes, hash });
                             }
                             Err(e) => return Err(format!("Image extraction failed: {e}")),
+                        },
+                        UserContent::Audio(audio) => match extract_media_bytes(&audio.data) {
+                            Ok(bytes) => {
+                                let hash = fnv1a_64(&bytes);
+                                media.push(PreparedMedia { bytes, hash });
+                            }
+                            Err(e) => return Err(format!("Audio extraction failed: {e}")),
                         },
                         UserContent::ToolResult(tool_result) => {
                             // Tool results can carry image content (e.g. a `read_file`
@@ -138,10 +145,10 @@ pub(crate) fn prepare_request(request: &CompletionRequest) -> Result<PreparedReq
                             // walk the normalized parts here in the same iteration order.
                             for part in normalized_tool_parts(&tool_result.content) {
                                 if let rig::message::ToolResultContent::Image(image) = part {
-                                    match extract_image_bytes(&image) {
+                                    match extract_media_bytes(&image.data) {
                                         Ok(bytes) => {
                                             let hash = fnv1a_64(&bytes);
-                                            imgs.push(PreparedImage { bytes, hash });
+                                            media.push(PreparedMedia { bytes, hash });
                                         }
                                         Err(e) => {
                                             return Err(format!(
@@ -157,7 +164,7 @@ pub(crate) fn prepare_request(request: &CompletionRequest) -> Result<PreparedReq
                 }
             }
         }
-        imgs
+        media
     };
 
     Ok(PreparedRequest {
@@ -172,7 +179,7 @@ pub(crate) fn prepare_request(request: &CompletionRequest) -> Result<PreparedReq
             .map(has_thinking_request)
             .unwrap_or(false),
         #[cfg(feature = "mtmd")]
-        images,
+        media,
     })
 }
 
@@ -180,20 +187,20 @@ fn append_message_json(messages: &mut Vec<Value>, msg: &Message) {
     match msg {
         Message::User { content } => {
             #[cfg(feature = "mtmd")]
-            let has_images = content
+            let has_media = content
                 .iter()
-                .any(|item| matches!(item, UserContent::Image(_)));
+                .any(|item| matches!(item, UserContent::Image(_) | UserContent::Audio(_)));
 
             #[cfg(feature = "mtmd")]
-            if has_images {
+            if has_media {
                 // Use structured content parts matching llama.cpp server behavior.
                 // This ensures templates that distinguish media_marker from text
-                // (e.g. Qwen3.5-VL) handle images correctly regardless of
+                // (e.g. Qwen3.5-VL) handle media correctly regardless of
                 // enable_thinking or reasoning_format settings.
                 let mut content_parts = Vec::new();
                 for item in content.iter() {
                     match item {
-                        UserContent::Image(_) => {
+                        UserContent::Image(_) | UserContent::Audio(_) => {
                             content_parts.push(json!({
                                 "type": "media_marker",
                                 "text": llama_cpp_2::mtmd::mtmd_default_marker()
@@ -450,9 +457,9 @@ fn tool_call_json(tool_call: &ToolCall) -> Value {
 }
 
 #[cfg(feature = "mtmd")]
-fn extract_image_bytes(image: &rig::message::Image) -> Result<Vec<u8>, String> {
+fn extract_media_bytes(data: &rig::message::DocumentSourceKind) -> Result<Vec<u8>, String> {
     use rig::message::DocumentSourceKind;
-    match &image.data {
+    match data {
         DocumentSourceKind::Raw(bytes) => Ok(bytes.clone()),
         DocumentSourceKind::Base64(encoded) => {
             use base64::Engine;
@@ -461,9 +468,9 @@ fn extract_image_bytes(image: &rig::message::Image) -> Result<Vec<u8>, String> {
                 .map_err(|e| format!("Base64 decode failed: {e}"))
         }
         DocumentSourceKind::Url(_) => {
-            Err("URL image sources are not supported; pre-fetch the image data".into())
+            Err("URL media sources are not supported; pre-fetch the media data".into())
         }
-        other => Err(format!("Unsupported image source kind: {other:?}")),
+        other => Err(format!("Unsupported media source kind: {other:?}")),
     }
 }
 

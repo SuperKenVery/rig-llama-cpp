@@ -212,7 +212,7 @@ pub(crate) fn inference_worker(
 }
 
 /// Top-level inference dispatch: text-only by default, multimodal when the
-/// request carries images and an mtmd context is available.
+/// request carries media and an mtmd context is available.
 fn run_inference<'m>(
     ctx: &RunCtx<'_, 'm>,
     persistent: &mut Option<PersistentCtx<'m>>,
@@ -221,8 +221,8 @@ fn run_inference<'m>(
 ) -> Result<InferenceResult, String> {
     #[cfg(feature = "mtmd")]
     {
-        let has_images = !req.prepared_request.images.is_empty();
-        if has_images && ctx.mtmd_ctx.is_some() {
+        let has_media = !req.prepared_request.media.is_empty();
+        if has_media && ctx.mtmd_ctx.is_some() {
             return run_image_inference(ctx, persistent, req, stream_tx);
         }
     }

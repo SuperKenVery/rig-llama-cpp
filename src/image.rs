@@ -7,8 +7,8 @@ use crate::slot::{SlotEntry, get_common_prefix};
 use crate::types::{InferenceParams, InferenceResult, PromptBuildResult, StreamSender};
 use crate::worker::{CANCEL_ERR, RunCtx};
 
-/// Multimodal (image) inference with the same persistent context the text
-/// path uses, plus image-aware prefix-cache reuse.
+/// Multimodal inference with the same persistent context the text path uses,
+/// plus media-aware prefix-cache reuse.
 ///
 /// We stamp each `MtmdBitmap` with a hex-encoded FNV-1a hash of its bytes via
 /// `set_id`. mtmd propagates this id into the resulting `MtmdInputChunk`s,
@@ -19,8 +19,8 @@ use crate::worker::{CANCEL_ERR, RunCtx};
 /// Reuse strategy:
 /// - When the matched prefix covers all chunks (no suffix), or when the
 ///   diverging suffix is text-only, we trim the KV tail and decode only the
-///   new text tokens — the image's KV state stays put.
-/// - When the suffix contains an image chunk, or when a prefix rollback is
+///   new text tokens — the media KV state stays put.
+/// - When the suffix contains a media chunk, or when a prefix rollback is
 ///   needed on a model whose memory rejects partial trims (recurrent /
 ///   hybrid), we full-clear the cache and run `eval_chunks` from scratch.
 ///   Image-suffix reuse via `mtmd_helper_eval_chunk_single` is not
@@ -43,15 +43,15 @@ pub(crate) fn run_image_inference<'m>(
         .mtmd_ctx
         .ok_or_else(|| "BUG: run_image_inference called without mtmd context".to_string())?;
 
-    // Build bitmaps and stamp each with the FNV id so chunk ids round-trip.
+    // Build mtmd bitmaps and stamp each with the FNV id so chunk ids round-trip.
     let bitmaps: Vec<llama_cpp_2::mtmd::MtmdBitmap> = req
         .prepared_request
-        .images
+        .media
         .iter()
-        .map(|img| -> Result<_, String> {
-            let bm = llama_cpp_2::mtmd::MtmdBitmap::from_buffer(mtmd, &img.bytes)
-                .map_err(|e| format!("Failed to create bitmap from image data: {e}"))?;
-            bm.set_id(&format!("{:016x}", img.hash))
+        .map(|media| -> Result<_, String> {
+            let bm = llama_cpp_2::mtmd::MtmdBitmap::from_buffer(mtmd, &media.bytes)
+                .map_err(|e| format!("Failed to create mtmd bitmap from media data: {e}"))?;
+            bm.set_id(&format!("{:016x}", media.hash))
                 .map_err(|e| format!("Failed to set bitmap id: {e}"))?;
             Ok(bm)
         })
